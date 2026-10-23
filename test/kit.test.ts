@@ -9,6 +9,7 @@ import { join } from "node:path";
 import * as url from "node:url";
 import { after, test } from "node:test";
 import { commonJs } from "../src/kit/commonjs.ts";
+import { serve } from "./serve.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 const example = join(root, "example");
@@ -113,6 +114,18 @@ test("withMapper takes Next.js's own config, typed or written inline, and still 
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("under Cloudflare's Vite plugin, which takes .txt imports as text, a mapper for .txt still gets its files", () => {
+  const app = project("txt", `export default { name: "notes", extensions: [".txt"], transform: (source) => ({ code: "export default " + JSON.stringify({ lines: source.trim().split(/\\r?\\n/) }) + " as const;\\n" }) };\n`);
+  for (const dependency of ["vite", "@cloudflare"]) symlinkSync(join(example, "node_modules", dependency), join(app, "node_modules", dependency));
+  writeFileSync(join(app, "package.json"), JSON.stringify({ type: "module" }));
+  writeFileSync(join(app, "note.txt"), "one\ntwo\n");
+  writeFileSync(join(app, "worker.ts"), `import note from "./note.txt";\nexport default { fetch: () => Response.json(note) };\n`);
+  writeFileSync(join(app, "wrangler.jsonc"), JSON.stringify({ name: "txt", main: "worker.ts", compatibility_date: "2026-10-01" }));
+  writeFileSync(join(app, "vite.config.ts"), `import { cloudflare } from "@cloudflare/vite-plugin";\nimport contentMapper from "${name}/vite";\nexport default { plugins: [contentMapper(), cloudflare()] };\n`);
+  const result = run("node", ["--input-type=module", "-e", serve("dev")], app);
+  assert.equal(result.stdout, JSON.stringify({ lines: ["one", "two"] }), result.output);
 });
 
 /** Runs `code` as CommonJS, with `modules` as what each `require` gives. */

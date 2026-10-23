@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { test } from "node:test";
+import { serve } from "./serve.ts";
 
 const example = new URL("../example/", import.meta.url).pathname;
 if (!existsSync(`${example}node_modules`)) throw new Error("Install the example first: npm install --prefix example");
@@ -83,6 +84,21 @@ test("jest", () => {
   const result = run(bin("jest"), []);
   assert.equal(result.status, 0, result.output);
 });
+
+// A Worker built by Vite with Cloudflare's plugin, run in workerd, Cloudflare's runtime: under the
+// dev server, and as the build that `wrangler deploy` uploads.
+for (const mode of ["dev", "preview"] as const) {
+  test(`cloudflare workers, vite ${mode}`, () => {
+    const worker = `${example}worker/`;
+    if (mode === "preview") {
+      rmSync(`${worker}dist`, { recursive: true, force: true });
+      const built = run(bin("vite"), ["build"], worker);
+      assert.equal(built.status, 0, built.output);
+    }
+    const result = run("node", ["--input-type=module", "-e", serve(mode)], worker);
+    assert.equal(result.stdout, expected, result.output);
+  });
+}
 
 for (const bundler of ["turbopack", "webpack"]) {
   test(`next build with ${bundler}`, () => {

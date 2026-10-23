@@ -4,3 +4,5 @@ example/dist/
 example/next/.next/
 example/next/next-env.d.ts
 *.tsbuildinfo
+example/worker/dist/
+.wrangler/

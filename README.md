@@ -1,6 +1,6 @@
 # content-mapper-starter
 
-A starter kit for [TypeScript 7.1 content mappers](https://github.com/microsoft/typescript-go/pull/4712). You write one function that turns a file into TypeScript. That one piece of code types the import in tsc and the editor, and it is what runs in Node, Bun, Vite, Vitest, Rollup, Rolldown, esbuild, webpack, Next.js and Jest.
+A starter kit for [TypeScript 7.1 content mappers](https://github.com/microsoft/typescript-go/pull/4712). You write one function that turns a file into TypeScript. That one piece of code types the import in tsc and the editor, and it is what runs in Node, Bun, Vite, Vitest, Rollup, Rolldown, esbuild, webpack, Next.js, Jest and Cloudflare Workers.
 
 ```ts
 // src/mapper.ts
@@ -27,11 +27,13 @@ A content mapper tells tsc what a file it doesn't understand means as a module. 
 
 This kit's plugins all call the same `transform`. tsc reads the code it returns as it is. Every other host strips the types, with the runtime's own type stripper (Node's or Bun's), and runs what is left. The type and the value come from one text, so they can't disagree.
 
+The types are stripped where the file is loaded or bundled, which is Node or Bun. A bundle's target never sees TypeScript, so a browser or a Cloudflare Worker gets plain JavaScript.
+
 ```mermaid
 flowchart LR
   T["transform(source)"] --> C["code: one ES module in TypeScript"]
   C -->|as it is| TSC["tsc and the editor"]
-  C -->|types stripped| RT["Node, Bun, Vite, Vitest, Rollup, Rolldown, esbuild, webpack, Next.js, Jest"]
+  C -->|types stripped| RT["Node, Bun, Vite, Vitest, Rollup, Rolldown, esbuild, webpack, Next.js, Jest, Cloudflare Workers"]
 ```
 
 ## Make your own
@@ -126,6 +128,16 @@ export default withMapper(nextConfig);
 
 `next build` runs tsc without `--runExternalCode`, so `withMapper` turns that check off and runs the same one with the flag.
 
+```ts
+// vite.config.ts for a Cloudflare Worker: the mapper's plugin, then Cloudflare's
+import { cloudflare } from "@cloudflare/vite-plugin";
+import contentMapper from "my-content-mapper/vite";
+
+export default { plugins: [contentMapper(), cloudflare()] };
+```
+
+`wrangler deploy` uploads what `vite build` wrote. Wrangler's own bundler takes no plugins, so a Worker that imports a mapped file is built with Vite.
+
 ```jsonc
 // jest.config.json
 { "transform": { "\\.ini$": "my-content-mapper/jest" } }
@@ -141,12 +153,12 @@ Each host takes a different kind of thing: Vite a plugin object, webpack a loade
 | --- | --- |
 | [`src/mapper.ts`](./src/mapper.ts) | The mapper: the one file to edit |
 | [`src/kit/`](./src/kit) | One file per host, plus the content mapper process tsc starts (`server.ts`) and what they share (`run.ts`) |
-| [`example/`](./example) | A project that imports an `.ini` file through every host, with one config or script per host |
+| [`example/`](./example) | A project that imports an `.ini` file through every host, with one config or script per host, a Next.js app in `next/` and a Cloudflare Worker in `worker/` |
 | [`test/`](./test) | `hosts.test.ts` runs the example through every host; `kit.test.ts` checks the kit itself |
 
 ## Requirements and limits
 
-- Node 22.18 or later, or Bun; TypeScript 7.1 or later, which is in beta. The content mapper protocol is new and may still change.
+- Node 22.18 or later, or Bun, to load or bundle the files; TypeScript 7.1 or later, which is in beta. The content mapper protocol is new and may still change.
 - It suits formats whose module can be written as code: data files, query languages, schemas. It doesn't suit component frameworks (Vue, Svelte, Astro, MDX), whose type-checking output isn't runnable code; their runtime needs their own compiler.
 - The kit sends tsc no span mappings between the file and the code. [ts-content-mapper](https://github.com/sxzz/ts-content-mapper) has a builder for them.
 - Jest runs CommonJS unless it is started for ES modules, so its transformer rewrites the `import` and `export` statements that open a line. A module with any other form fails with a message; run Jest with ES modules for it.
