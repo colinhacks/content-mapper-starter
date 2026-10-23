@@ -1,0 +1,4 @@
+{
+  "testMatch": ["<rootDir>/jest/*.test.cjs"],
+  "transform": { "\\.ini$": "my-content-mapper/jest" }
+}

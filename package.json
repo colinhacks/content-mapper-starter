@@ -1,0 +1,41 @@
+{
+  "name": "my-content-mapper",
+  "version": "0.0.0",
+  "description": "Import .ini files from TypeScript, typed and loaded by one content mapper.",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    "./register": "./dist/kit/register.js",
+    "./vite": "./dist/kit/vite.js",
+    "./esbuild": "./dist/kit/esbuild.js",
+    "./webpack": "./dist/kit/webpack.js",
+    "./turbopack": "./dist/kit/turbopack.js",
+    "./jest": "./dist/kit/jest.js",
+    "./next": "./dist/kit/next.js"
+  },
+  "typescript": {
+    "contentMapper": {
+      "exec": [
+        "node",
+        "dist/kit/server.js"
+      ],
+      "compilerOptions": []
+    }
+  },
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "npm run build && node --test 'test/*.test.ts'",
+    "prepack": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "7.1.0-beta"
+  }
+}

@@ -1,0 +1,6 @@
+node_modules/
+dist/
+example/dist/
+example/next/.next/
+example/next/next-env.d.ts
+*.tsbuildinfo
