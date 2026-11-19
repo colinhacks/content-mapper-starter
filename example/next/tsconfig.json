@@ -25,10 +25,7 @@
   },
   "contentMappers": [
     {
-      "package": "my-content-mapper",
-      "extensions": [
-        ".ini"
-      ]
+      "package": "my-content-mapper"
     }
   ],
   "include": [

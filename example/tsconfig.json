@@ -8,6 +8,6 @@
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "contentMappers": [{ "package": "my-content-mapper", "extensions": [".ini"] }],
+  "contentMappers": [{ "package": "my-content-mapper" }],
   "include": ["src"]
 }

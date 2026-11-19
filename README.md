@@ -40,7 +40,7 @@ flowchart LR
 
 1. Click **Use this template** on GitHub, or copy this repository.
 2. Replace `my-content-mapper` everywhere with your package's name.
-3. Edit [`src/mapper.ts`](./src/mapper.ts): its `name`, its `extensions` and its `transform`. Nothing under `src/kit/` needs to change.
+3. Edit [`src/mapper.ts`](./src/mapper.ts): its `name`, its `extensions` and its `transform`. Nothing under `src/kit/` needs to change. The build copies `extensions` into `typescript.contentMapper` in `package.json`, where tsc reads them, so commit that change along with your mapper.
 4. Swap the example for your format: put a file of your format in place of [`example/src/settings.ini`](./example/src/settings.ini) (and fix the imports that name it), the value it should become in [`example/expected.json`](./example/expected.json), its exact type in [`example/src/main.ts`](./example/src/main.ts), and a broken file in [`example/broken/`](./example/broken).
 5. Run the tests, which run the example through every host:
 
@@ -66,14 +66,20 @@ flowchart LR
 
 This is what your README tells them, with your package's name and extensions in place of the example's.
 
-Every project registers the mapper in its `tsconfig.json`, and runs tsc with `--runExternalCode`, which content mappers require:
+Every project installs TypeScript 7.1, registers the mapper in its `tsconfig.json`, and runs tsc with `--runExternalCode`, which content mappers require:
+
+```sh
+npm install --save-dev typescript@next
+```
 
 ```jsonc
 {
   "compilerOptions": { /* … */ },
-  "contentMappers": [{ "package": "my-content-mapper", "extensions": [".ini"] }]
+  "contentMappers": [{ "package": "my-content-mapper" }]
 }
 ```
+
+The package names the extensions it maps, so the entry doesn't list them. That needs a TypeScript nightly from 2026-11-12 or later. With an older 7.1, `7.1.0-beta` included, the entry lists them: `{ "package": "my-content-mapper", "extensions": [".ini"] }`. An entry that lists them replaces the package's list.
 
 In VS Code or Cursor, install the TypeScript 7 extension (`TypeScriptTeam.native-preview`), point it at the project's TypeScript, whose version has content mappers, and trust the workspace, the only kind in which it runs them:
 
@@ -153,12 +159,14 @@ Each host takes a different kind of thing: Vite a plugin object, webpack a loade
 | --- | --- |
 | [`src/mapper.ts`](./src/mapper.ts) | The mapper: the one file to edit |
 | [`src/kit/`](./src/kit) | One file per host, plus the content mapper process tsc starts (`server.ts`) and what they share (`run.ts`) |
+| [`scripts/manifest.ts`](./scripts/manifest.ts) | Copies the mapper's extensions into `package.json` on every build |
 | [`example/`](./example) | A project that imports an `.ini` file through every host, with one config or script per host, a Next.js app in `next/` and a Cloudflare Worker in `worker/` |
 | [`test/`](./test) | `hosts.test.ts` runs the example through every host; `kit.test.ts` checks the kit itself |
 
 ## Requirements and limits
 
-- Node 22.18 or later, or Bun, to load or bundle the files; TypeScript 7.1 or later, which is in beta. The content mapper protocol is new and may still change.
+- Node 22.18 or later, or Bun, to load or bundle the files; TypeScript 7.1 or later, installed as `typescript@next` until 7.1 is released. The content mapper protocol is new and may still change.
+- tsc gives a mapped file the module format of its package, as it does a `.ts` file, while every runtime loads it as an ES module. In a package without `"type": "module"`, an `.mts` file that imports one is typed as importing CommonJS, so its default import is the whole module. Give the package `"type": "module"` for that.
 - It suits formats whose module can be written as code: data files, query languages, schemas. It doesn't suit component frameworks (Vue, Svelte, Astro, MDX), whose type-checking output isn't runnable code; their runtime needs their own compiler.
 - The kit sends tsc no span mappings between the file and the code. [ts-content-mapper](https://github.com/sxzz/ts-content-mapper) has a builder for them.
 - Jest runs CommonJS unless it is started for ES modules, so its transformer rewrites the `import` and `export` statements that open a line. A module with any other form fails with a message; run Jest with ES modules for it.

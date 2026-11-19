@@ -1,6 +1,7 @@
 // The kit's own behavior, on stand-in mappers made for each case: an async transform under every
 // host that loads modules synchronously, a transform that throws or returns code tsc rejects or no
-// runtime can run, and the CommonJS that Jest gets.
+// runtime can run, and the CommonJS that Jest gets. And the package as it is published: its manifest
+// names the mapper's extensions, so a tsconfig entry may leave them out.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -9,13 +10,15 @@ import { join } from "node:path";
 import * as url from "node:url";
 import { after, test } from "node:test";
 import { commonJs } from "../src/kit/commonjs.ts";
+import mapper from "../src/mapper.ts";
 import { serve } from "./serve.ts";
 
 const root = new URL("../", import.meta.url).pathname;
 const example = join(root, "example");
 if (!existsSync(join(root, "dist"))) throw new Error("Build the kit first: npm run build");
 if (!existsSync(join(example, "node_modules"))) throw new Error("Install the example first: npm install --prefix example");
-const name = (JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name: string }).name;
+const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as { name: string; typescript: { contentMapper: { extensions?: string[] } } };
+const name = manifest.name;
 const scratch = mkdtempSync(join(tmpdir(), "content-mapper-"));
 after(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -27,8 +30,12 @@ const run = (command: string, args: string[], cwd: string) => {
 const missing = (tool: string) => spawnSync(tool, ["--version"]).status !== 0 && `${tool} is not installed`;
 const tsc = (app: string) => run("node", [join(example, "node_modules/typescript/bin/tsc"), "-p", "tsconfig.json", "--runExternalCode"], app);
 
+// The tsconfig entry that lists the extensions, and the one that takes them from the manifest.
+const long = { package: name, extensions: [".ini"] };
+const short = { package: name };
+
 /** A project using a copy of the built kit whose mapper is `mapper`, a JavaScript module claiming `.ini`. */
-function project(label: string, mapper: string): string {
+function project(label: string, mapper: string, entry: object = long): string {
   const pkg = join(scratch, label, "pkg");
   const app = join(scratch, label, "app");
   cpSync(join(root, "dist"), join(pkg, "dist"), { recursive: true });
@@ -42,7 +49,7 @@ function project(label: string, mapper: string): string {
   writeFileSync(join(app, "a.test.cjs"), `test("a", () => { expect(require("./a.ini").default).toEqual({ text: "x = 1" }); });\n`);
   writeFileSync(join(app, "jest.config.json"), JSON.stringify({ testMatch: ["<rootDir>/a.test.cjs"], transform: { "\\.ini$": `${name}/jest` } }));
   const compilerOptions = { strict: true, noEmit: true, module: "nodenext", skipLibCheck: true, types: [] };
-  writeFileSync(join(app, "tsconfig.json"), JSON.stringify({ compilerOptions, contentMappers: [{ package: name, extensions: [".ini"] }], include: ["main.ts"] }));
+  writeFileSync(join(app, "tsconfig.json"), JSON.stringify({ compilerOptions, contentMappers: [entry], include: ["main.ts"] }));
   return app;
 }
 
@@ -64,6 +71,42 @@ test("an async transform, under the hosts that load synchronously", async (t) =>
     const result = run("node", [join(example, "node_modules/jest/bin/jest.js"), "--config", "jest.config.json"], app);
     assert.equal(result.status, 0, result.output);
   });
+});
+
+test("the manifest names the extensions src/mapper.ts claims", () => {
+  assert.deepEqual(manifest.typescript.contentMapper.extensions, [...mapper.extensions], "npm run build copies them into package.json");
+});
+
+for (const [kind, entry] of [["short", short], ["long", long]] as const) {
+  test(`tsc types a file through the ${kind} tsconfig entry`, () => {
+    const app = project(`entry-${kind}`, ASYNC, entry);
+    writeFileSync(join(app, "main.ts"), `import a from "./a.ini";\nexport const text: "x = 1" = a.text;\n// @ts-expect-error The exact type, not string.\nexport const other: "y = 2" = a.text;\n`);
+    const result = tsc(app);
+    assert.equal(result.status, 0, result.output);
+  });
+}
+
+// What a user installs: the package npm packs, in a project of its own.
+test("the packed package, under the short tsconfig entry, types a file and reports its problems", () => {
+  const app = join(scratch, "packed");
+  mkdirSync(app, { recursive: true });
+  const packed = run("npm", ["pack", "--ignore-scripts", "--json", "--pack-destination", app], root);
+  assert.equal(packed.status, 0, packed.output);
+  const tarball = (JSON.parse(packed.stdout) as { filename: string }[])[0]!.filename;
+  writeFileSync(join(app, "package.json"), JSON.stringify({ private: true }));
+  const installed = run("npm", ["install", "--offline", "--no-audit", "--no-fund", "--ignore-scripts", `./${tarball}`], app);
+  assert.equal(installed.status, 0, installed.output);
+  writeFileSync(join(app, "good.ini"), "[server]\nport = 8080\n");
+  writeFileSync(join(app, "bad.ini"), "[server]\nport\n");
+  writeFileSync(join(app, "main.ts"), `import good from "./good.ini";\nexport const port: 8080 = good.server.port;\n// @ts-expect-error The exact type, not number.\nexport const other: 80 = good.server.port;\n`);
+  writeFileSync(join(app, "broken.ts"), `import bad from "./bad.ini";\nexport { bad };\n`);
+  const compilerOptions = { strict: true, noEmit: true, module: "nodenext", skipLibCheck: true, types: [] };
+  // Two checks, since tsc skips type-checking a program once a file in it has a syntax error.
+  for (const file of ["main.ts", "broken.ts"]) {
+    writeFileSync(join(app, "tsconfig.json"), JSON.stringify({ compilerOptions, contentMappers: [short], include: [file] }));
+    const result = tsc(app);
+    assert.equal(result.output.trim(), file === "main.ts" ? "" : `bad.ini(2,1): error ini1: Expected "key = value" or "[section]".`);
+  }
 });
 
 test("a transform that returns a promise without being async is refused with the fix", () => {

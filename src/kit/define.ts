@@ -18,7 +18,7 @@ export type Result = {
 export type Mapper = {
   /** Names the mapper in every error, and is the source tsc shows beside its diagnostics. */
   name: string;
-  /** The file suffixes the mapper claims, each starting with a dot. A project lists the same ones in its tsconfig.json. */
+  /** The file suffixes the mapper claims, each starting with a dot. The build copies them into package.json, where tsc reads them. */
   extensions: readonly string[];
   /** The module a file becomes. It may be async. */
   transform(source: string, path: string): Result | Promise<Result>;

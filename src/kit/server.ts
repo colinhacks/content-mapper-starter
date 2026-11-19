@@ -36,8 +36,10 @@ serve({
       }
     }
     return {
-      // An ES module whatever the nearest package.json says, as every runtime loads it.
-      extension: ".mts",
+      // In the module format the nearest package.json gives, which tsc requires to match the format
+      // of the declaration file it would write for the mapped file (TS18125). Every runtime still
+      // loads it as an ES module.
+      extension: ".ts",
       text: result.code,
       diagnostics: diagnostics.map((d) => ({ messageText: d.message, code: d.code ?? 1, ...range(content, d.start, d.length) })),
     };
